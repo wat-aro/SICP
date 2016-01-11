@@ -1,10 +1,11 @@
+(use util.match)
 (define true #t)
 (define false #f)
 
 (define (eval exp env)
   (cond ((self-evaluating? exp) exp)
         ((variable? exp) (lookup-variable-value exp env))
-        ((quoted? exp) (eval (quote->combination exp) env))
+        ((quoted? exp) (eval-quote exp env))
         ((assignment? exp) (eval-assignment exp env))
         ((definition? exp) (eval-definition exp env))
         ((if? exp) (eval-if exp env))
@@ -12,9 +13,13 @@
          (make-procedure (lambda-parameters exp)
                          (lambda-body exp)
                          env))
+        ((list-lambda? exp) ;;list-lambda?とmake-list-procedureの追加
+         (make-list-procedure (lambda-parameters exp)
+                              (lambda-body exp)
+                              env))
         ((let? exp) (eval (let->combination exp) env))
         ((let*? exp) (eval (let*->nested-lets exp) env))
-        ((letrec? exp) (eval (letrec->let exp) env)) ;;letrecを追加
+        ((letrec? exp) (eval (letrec->let exp) env))
         ((begin? exp)
          (eval-sequence (begin-actions exp) env))
         ((cond? exp) (eval (cond->if exp) env))
@@ -117,16 +122,21 @@
 (define (quoted? exp)
   (tagged-list? exp 'quote))
 
-(define (text-of-quotation exp) exp)
+(define (make-quote obj)
+  (list 'quote obj))
 (define (quote-body exp) (cadr exp))
-(define (quote->combination exp)
-  (quote->cons (quote-body exp)))
+(define (eval-quote exp env)
+  (let ((obj (quote-body exp)))
+    (cond ((null? obj) obj)
+          ((symbol? obj) obj)
+          ((self-evaluating? obj) obj)
+          (else (eval (quote->cons obj) env)))))
 
-(define (quote->cons lst)
-  (cond ((null? lst) lst)
-        ((symbol? lst) lst)
-        (else (make-lambda (list 'm)
-                           (list (cons 'm (list (car lst) (quote->cons (cdr lst)))))))))
+(define (quote->cons obj)
+  (cond ((null? obj) (make-quote obj))
+        ((symbol? obj) (make-quote obj))
+        (else (list 'cons (make-quote (car obj))
+                    (quote->cons (cdr obj))))))
 
 (define (tagged-list? exp tag)
   (if (pair? exp)
@@ -174,6 +184,10 @@
           (else (iter (cdr proc-body)
                       def
                       (cons (car proc-body) body))))))
+
+(define (list-lambda? exp) (tagged-list? exp 'list-lambda))
+(define (make-list-procedure parameters body env)
+  (list 'list-proc parameters (scan-out-defines body) env))
 
 ;; 4.17
 (define (scan-out-defines body)
@@ -372,7 +386,8 @@
 (define (make-procedure parameters body env)
   (list 'procedure parameters (scan-out-defines body) env))
 (define (compound-procedure? p)
-  (tagged-list? p 'procedure))
+  (or (tagged-list? p 'procedure)
+      (tagged-list? p 'list-proc)))
 (define (procedure-parameters p) (cadr p))
 (define (procedure-body p) (caddr p))
 (define (procedure-environment p) (cadddr p))
@@ -449,17 +464,15 @@
 (define (primitive-implementation proc) (cadr proc))
 
 (define primitive-procedures
-  (list (list 'car car)
-        (list 'cdr cdr)
-        (list 'cons cons)
-        (list 'null? null?)
+  (list (list 'null? null?)
         (list '= =)
         (list '- -)
         (list '+ +)
         (list '* *)
         (list '/ /)
         (list 'newline newline)
-        (list 'display display)))
+        (list 'display display)
+        (list '() '())))
 
 (define (primitive-procedure-names)
   (map car primitive-procedures))
@@ -497,15 +510,6 @@
       (user-print output)))
   (driver-loop))
 
-;; 計測用driver-loop
-;; (define (driver-loop)
-;;   (prompt-for-input input-prompt)
-;;   (let ((input (read)))
-;;     (let ((output (time (actual-value input the-global-environment))))
-;;       (announce-output output-prompt)
-;;       (user-print output)))
-;;   (driver-loop))
-
 (define (prompt-for-input string)
   (newline)
   (newline)
@@ -518,61 +522,91 @@
   (newline))
 
 (define (user-print object)
-  (if (compound-procedure? object)
-      (display (list 'compound-procedure
-                     (procedure-parameters object)
-                     (procedure-body object)
-                     '<procedure-env>))
-      (display object)))
+  (cond ((tagged-list? object 'list-proc)
+         (list-display (match-to object)))
+        ((compound-procedure? object)
+         (display (list 'compound-procedure
+                        (procedure-parameters object)
+                        (procedure-body object)
+                        '<procedure-env>)))
+        (else (display object))))
+
+(define (match-to obj)
+  (match obj
+    ((procedure (m) body ((parameters exp1 exp2) env))
+     (cons exp1 exp2))))
+
+(define (first-list-value exp)
+  (display (force-it (car exp))))
 
 
+(define (list-display exp)
+  (list-display-iter exp 9))
+
+(define (list-display-iter exp n)
+  (cond ((= n 0)
+             (display "...)"))
+        (else (when (= n 9)
+                (display "("))
+              (continue-display exp n))))
+
+(define (continue-display exp n)
+  (first-list-value exp)
+  (let ((second (force-it (cdr exp))))
+    (cond ((null? second) (display ")"))
+          ((or (self-evaluating? second) (symbol? second))
+           (display " . ")
+           (display second)
+           (display ")"))
+          (else (display " ")
+                (list-display-iter (match-to second) (- n 1))))))
 
 
+(actual-value
+ '(begin (define (cons x y)
+           (list-lambda (m) (m x y)))
+         (define (car z)
+           (z (lambda (p q) p)))
+         (define (cdr z)
+           (z (lambda (p q) q)))
+
+         (define (list-ref items n)
+           (if (= n 0)
+               (car items)
+               (list-ref (cdr items) (- n 1))))
+
+         (define (map proc items)
+           (if (null? items)
+               '()
+               (cons (proc (car items))
+                     (map proc (cdr items)))))
+
+         (define (scale-list items factor)
+           (map (lambda (x) (* x factor))
+                items))
+
+         (define (add-lists list1 list2)
+           (cond ((null? list1) list2)
+                 ((null? list2) list1)
+                 (else (cons (+ (car list1) (car list2))
+                             (add-lists (cdr list1) (cdr list2))))))
+         (define ones (cons 1 ones))
+
+         (define integers (cons 0 (add-lists ones integers)))
+
+         (define (integral integrand initial-value dt)
+           (define int
+             (cons initial-value
+                   (add-lists (scale-list integrand dt)
+                              int)))
+           int)
+
+         (define (solve f y0 dt)
+           (define y (integral dy y0 dt))
+           (define dy (map f y))
+           y)
 
 
-;; (begin (define (cons x y)
-;;          (lambda (m) (m x y)))
+         )
+ the-global-environment)
 
-;;        (define (car z)
-;;          (z (lambda (p q) p)))
-
-;;        (define (cdr z)
-;;          (z (lambda (p q) q)))
-
-;;        (define (list-ref items n)
-;;          (if (= n 0)
-;;              (car items)
-;;              (list-ref (cdr items) (- n 1))))
-
-;;        (define (map proc items)
-;;          (if (null? items)
-;;              '()
-;;              (cons (proc (car items))
-;;                    (map proc (cdr items)))))
-
-;;        (define (scale-list items factor)
-;;          (map (lambda (x) (* x factor))
-;;               items))
-
-;;        (define (add-lists list1 list2)
-;;          (cond ((null? list1) list2)
-;;                ((null? list2) list1)
-;;                (else (cons (+ (car list1) (car list2))
-;;                            (add-lists (cdr list1) (cdr list2))))))
-
-;;        (define ones (cons 1 ones))
-
-;;        (define integers (cons 0 (add-lists ones integers)))
-
-;;        (define (integral integrand initial-value dt)
-;;          (define int
-;;            (cons initial-value
-;;                  (add-lists (scale-list integrand dt)
-;;                             int)))
-;;          int)
-
-;;        (define (solve f y0 dt)
-;;          (define y (integral dy y0 dt))
-;;          (define dy (map f y))
-;;          y)
-;; )

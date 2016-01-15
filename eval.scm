@@ -126,6 +126,78 @@
 (define (make-lambda parameters body)
   (cons 'lambda (cons parameters body)))
 
+;; lambda式
+(define (lambda? exp) (tagged-list? exp 'lambda))
+(define (lambda-parameters exp) (cadr exp))
+(define (lambda-body exp) (cddr exp))
+
+(define (make-lambda parameters body)
+  (cons 'lambda (cons parameters body)))
+
+(define (def-body-list proc-body)
+  (let iter ((proc-body proc-body)
+             (def '())
+             (body '()))
+    (cond ((null? proc-body) (cons (reverse def) (reverse body)))
+          ((definition? (car proc-body)) (iter (cdr proc-body)
+                                               (cons (car proc-body) def)
+                                               body))
+          (else (iter (cdr proc-body)
+                      def
+                      (cons (car proc-body) body))))))
+
+;; ((define u e1) (define v e2) e3 e4)
+;; => ((let ((u *unassigned*) (v *unassigned*)) (set! u e1) (set! v e2) e3 e4))
+(define (scan-out-defines body)
+  (define (split-def-body proc-body)
+    (let iter ((proc-body proc-body)
+               (def '())
+               (body '()))
+      (cond ((null? proc-body) (cons (reverse def) (reverse body)))
+            ((definition? (car proc-body)) (iter (cdr proc-body)
+                                                 (cons (car proc-body) def)
+                                                 body))
+            (else (iter (cdr proc-body)
+                        def
+                        (cons (car proc-body) body))))))
+  (let* ((def-body-list (split-def-body body))
+         (def-list (car def-body-list))
+         (body-list (cdr def-body-list)))
+    (if (null? def-list)
+        body
+        (list (make-let (map (lambda (x) (list (definition-variable x) ''*unassigned*))
+                         def-list)
+                    (append (map (lambda (x) (list 'set! (definition-variable x)
+                                                   (definition-value x)))
+                                 def-list)
+                            body-list))))))
+
+
+;; 4.17
+(define (scan-out-defines body)
+  (define (split-def-body proc-body)
+    (let iter ((proc-body proc-body)
+               (def '())
+               (body '()))
+      (cond ((null? proc-body) (cons (reverse def) (reverse body)))
+            ((definition? (car proc-body)) (iter (cdr proc-body)
+                                                 (cons (car proc-body) def)
+                                                 body))
+            (else (iter (cdr proc-body)
+                        def
+                        (cons (car proc-body) body))))))
+  (let* ((def-body-list (split-def-body body))
+         (def-list (car def-body-list))
+         (body-list (cdr def-body-list)))
+    (if (null? def-list)
+        body
+        (append  (map (lambda (x) (make-definition (definition-variable x) ''*unassigned*))
+                    def-list)
+                 (map (lambda (x) (list 'set! (definition-variable x)
+                                        (definition-value x)))
+                      def-list)
+                 body-list))))
+
 ;; if
 (define (if? exp) (tagged-list? exp 'if))
 (define (if-predicate exp) (cadr exp))
@@ -272,6 +344,22 @@
   (make-begin (list (make-definition func-name (make-lambda variables bodys))
                     (cons func-name expressions))))
 
+;; 4.20
+;; 選択子
+(define (letrec? exp) (tagged-list? exp 'letrec))
+(define (letrec-parameters exp) (cadr exp))
+(define (letrec-variables exp) (map car (letrec-parameters exp)))
+(define (letrec-expressions exp) (map cadr (letrec-parameters exp)))
+(define (letrec-body exp) (cddr exp))
+
+(define (letrec->let exp)
+  (make-let (map (lambda (x) (list x ''*unassigned*))
+                 (letrec-variables exp))
+            (append (map (lambda (x y) (list 'set! x y))
+                         (letrec-variables exp)
+                         (letrec-expressions exp))
+                    (letrec-body exp))))
+
 ;; 術後のテスト
 (define (true? x)
   (not (eq? x '#f)))
@@ -398,7 +486,7 @@
 (define output-prompt ";;; M-Eval value:")
 
 (define (driver-loop)
-  (prompt-for-input input-prompt)
+  (prompt-for-input #?=input-prompt)
   (let ((input (read)))
     (let ((output (time (eval input the-global-environment))))
       (announce-output output-prompt)
@@ -424,95 +512,3 @@
                      '<procedure-env>))
       (display object)))
 
-;; lambda式
-(define (lambda? exp) (tagged-list? exp 'lambda))
-(define (lambda-parameters exp) (cadr exp))
-(define (lambda-body exp) (cddr exp))
-
-(define (make-lambda parameters body)
-  (cons 'lambda (cons parameters body)))
-
-(define (def-body-list proc-body)
-  (let iter ((proc-body proc-body)
-             (def '())
-             (body '()))
-    (cond ((null? proc-body) (cons (reverse def) (reverse body)))
-          ((definition? (car proc-body)) (iter (cdr proc-body)
-                                               (cons (car proc-body) def)
-                                               body))
-          (else (iter (cdr proc-body)
-                      def
-                      (cons (car proc-body) body))))))
-
-;; ((define u e1) (define v e2) e3 e4)
-;; => ((let ((u *unassigned*) (v *unassigned*)) (set! u e1) (set! v e2) e3 e4))
-(define (scan-out-defines body)
-  (define (split-def-body proc-body)
-    (let iter ((proc-body proc-body)
-               (def '())
-               (body '()))
-      (cond ((null? proc-body) (cons (reverse def) (reverse body)))
-            ((definition? (car proc-body)) (iter (cdr proc-body)
-                                                 (cons (car proc-body) def)
-                                                 body))
-            (else (iter (cdr proc-body)
-                        def
-                        (cons (car proc-body) body))))))
-  (let* ((def-body-list (split-def-body body))
-         (def-list (car def-body-list))
-         (body-list (cdr def-body-list)))
-    (if (null? def-list)
-        body
-        (list (make-let (map (lambda (x) (list (definition-variable x) ''*unassigned*))
-                         def-list)
-                    (append (map (lambda (x) (list 'set! (definition-variable x)
-                                                   (definition-value x)))
-                                 def-list)
-                            body-list))))))
-
-
-;; 4.17
-(define (scan-out-defines body)
-  (define (split-def-body proc-body)
-    (let iter ((proc-body proc-body)
-               (def '())
-               (body '()))
-      (cond ((null? proc-body) (cons (reverse def) (reverse body)))
-            ((definition? (car proc-body)) (iter (cdr proc-body)
-                                                 (cons (car proc-body) def)
-                                                 body))
-            (else (iter (cdr proc-body)
-                        def
-                        (cons (car proc-body) body))))))
-  (let* ((def-body-list (split-def-body body))
-         (def-list (car def-body-list))
-         (body-list (cdr def-body-list)))
-    (if (null? def-list)
-        body
-        (append  (map (lambda (x) (make-definition (definition-variable x) ''*unassigned*))
-                    def-list)
-                 (map (lambda (x) (list 'set! (definition-variable x)
-                                        (definition-value x)))
-                      def-list)
-                 body-list))))
-
-;; 4.20
-;; 選択子
-(define (letrec? exp) (tagged-list? exp 'letrec))
-(define (letrec-parameters exp) (cadr exp))
-(define (letrec-variables exp) (map car (letrec-parameters exp)))
-(define (letrec-expressions exp) (map cadr (letrec-parameters exp)))
-(define (letrec-body exp) (cddr exp))
-
-(define (letrec->let exp)
-  (make-let (map (lambda (x) (list x ''*unassigned*))
-                 (letrec-variables exp))
-            (append (map (lambda (x y) (list 'set! x y))
-                         (letrec-variables exp)
-                         (letrec-expressions exp))
-                    (letrec-body exp))))
-
-(define (fact n)
-  (if (= n 0)
-      1
-      (* n (fact (- n 1)))))

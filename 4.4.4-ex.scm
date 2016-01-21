@@ -98,6 +98,8 @@
          the-empty-stream))
    frame-stream))
 
+(define (negate-helper operands frame-stream))
+
 (put 'not 'qeval negate)
 
 (define (lisp-value call frame-stream)
@@ -546,3 +548,177 @@
 (assert! (rule (wheel ?person)
                (and (supervisor ?middle-manager ?person)
                     (supervisor ?x ?middle-manager))))
+
+;; 4.71
+;; ;; 本文中のsimple-query
+;; (define (simple-query query-pattern frame-stream)
+;;   (stream-flatmap
+;;    (lambda (frame)
+;;      (stream-append-delayed
+;;       (find-assertions query-pattern frame)
+;;       (delay (apply-rules query-pattern frame))))
+;;    frame-stream))
+
+;; ;; 本文中のdisjoin
+;; (define (disjoin disjuncts frame-stream)
+;;   (if (empty-disjunction? disjuncts)
+;;       the-empty-stream
+;;       (interleave-delayed
+;;        (qeval (first-disjunct disjuncts) frame-stream)
+;;        (delay (disjoin (rest-disjuncts disjuncts)
+;;                        frame-stream)))))
+
+;; ;; Louis Reasonerが提案したsimple-query
+;; (define (simple-query query-pattern frame-stream)
+;;   (stream-flatmap
+;;    (lambda (frame)
+;;      (stream-append-delayed
+;;       (find-assertions query-pattern frame)
+;;       (apply-rules query-pattern frame)))
+;;    frame-stream))
+
+;; ;; Louis Reasonerが提案したdisjoin
+;; (define (disjoin disjuncts frame-stream)
+;;   (if (empty-disjunction? disjuncts)
+;;       the-empty-stream
+;;       (interleave-delayed
+;;        (qeval (first-disjunct disjuncts) frame-stream)
+;;        (disjoin (rest-disjuncts disjuncts)
+;;                 frame-stream))))
+
+;; ;; Louis Readonerの提案したものだとinterleaveの二つ目のストリームが遅延されていないので
+;; ;; 評価が終わるまで印字されない．
+;; ;; 仮にruleのほうで無限ループに陥った時に，delayする場合は一つ一つの評価結果を印字しながらループし
+;; ;; delayがない場合は何も印字せずに無限ループする．
+;; ;; 本文でも出てきたmarriedを使って試してみる．
+
+;; (assert! (married Minnie Mickey))
+
+;; (assert! (rule (married ?x ?y)
+;;                (married ?y ?x)))
+
+;; 4.72
+;; 最初のストリームが無限ストリームだった場合に次のストリームが評価されなくなるため．
+
+;; 4.73
+;; flatten-streamが明示的にdelayを使うのはなぜか．
+
+;; flatten-streamはストリームのストリームを引数にとる．
+;; なのでストリームの中に無限ストリームがあると評価が終わらずになにも印字されないため．
+
+;; 4.74
+;; negate, lisp-value, singleton-streamはflatten-streamを変更して直列にしても問題ないのではという問題
+;; 元のflatten-stream
+;; (define (flatten-stream stream)
+;;   (if (stream-null? stream)
+;;       the-empty-stream
+;;       (interleave-delayed
+;;        (stream-car stream)
+;;        (delay (flatten-stream (stream-cdr stream))))))
+
+;; ;; a 差し込みを使わないsimple-flattenの実装
+;; (define (simbple-stream-flatmap proc s)
+;;   (simple-flatten (stream-map proc s)))
+
+;; (define (simple-flatten stream)
+;;   (stream-map stream-car
+;;               (stream-filter (lambda (s) (not (null? s)))
+;;                              stream)))
+
+;; b
+;; negate, lisp-valueはsinbleton-streamを取るので交互にしても直列にしても結果は変わらない．
+;; find-assertionsの場合はfetch-assertionsで対応する表明を集めてきているので同じく変わらない．
+
+;; 4.75
+;; streamの個数を調べる．
+(define (stream-length s)
+  (let iter ((stream s)
+             (count 0))
+    (if (stream-null? stream)
+        count
+        (iter (stream-cdr stream) (+ count 1)))))
+
+(define (unique-query exps) (car exps))
+
+(define (uniquely-asserted contents frame-stream)
+  (stream-flatmap
+    (lambda (frame)
+      (let ((result (qeval (unique-query contents)
+                           (singleton-stream frame))))
+        (if (and (not (stream-null? result))
+                 (= (stream-length result) 1))
+            result
+            the-empty-stream)))
+    frame-stream))
+
+(put 'unique 'qeval uniquely-asserted)
+
+;; 4.76
+(define (conjoin conjuncts frame-stream)
+  (if (empty-conjunction? conjuncts)
+      frame-stream
+      (let ((first (qeval (first-conjunct conjuncts) frame-stream))
+            (rest (conjoin (rest-conjuncts conjuncts) frame-stream)))
+        (conjoin-frame-stream first rest))))
+
+(define (conjoin-frame-stream fs1 fs2)
+  (stream-filter
+   (lambda (frame) (not (eq? frame 'failed)))
+   (stream-flatmap
+    (lambda (frame1)
+      (stream-map
+       (lambda (frame2) (conjoin-consistent frame1 frame2))
+       fs2))
+    fs1)))
+
+
+;; f2をフレームと考え，f1のvarがf2にあるかを調べる．
+;; f2にあってf1のvarの値と同じならOK．違えばfailed.なければf2を拡張する．
+;; 上記手順はexend-if-possibleがやる．
+(define (conjoin-consistent f1 f2)
+  (if (null? f1) f2
+      (let ((extend-frame2 (extend-if-possible (caar f1) (cdar f1) f2)))
+        (if (eq? extend-frame2 'failed)
+            'failed
+            (conjoin-consistent (cdr f1) extend-frame2)))))
+
+(put 'and 'qeval conjoin)
+
+;; (? x)が値を指していればその値を返す．(? y)となっていれば，さらにその値を探す．
+;; varもvalも(? x)同じものを指していればfailedが返る．
+(define (extend-if-possible var val frame)
+  (let ((binding (binding-in-frame var frame))) ;フレームからvarに対応するvalを探して束縛
+    (cond (binding
+           (unify-match (binding-value binding) val frame))
+          ;; 上のletで探してきたvalもまた(? y)という形だった場合は更にフレームから探してくる．
+          ((var? val)
+           (let ((binding (binding-in-frame val frame)))
+             (if binding
+                 (unify-match var (binding-value binding) frame)
+                 (extend var val frame)))) ;見つからなければフレームを拡張
+          ((depends-on? val var frame)     ;valとvarが同じく(? x)だった場合はfailed
+           'failed)
+          (else (extend var val frame)))))
+
+;; 4.77
+(define (conjoin conjuncts frame-stream)
+  (let ((new (bring-filter-behind conjuncts)))
+    (if (empty-conjunction? new)
+      frame-stream
+      (conjoin (rest-conjuncts new)
+               (qeval (first-conjunct new)
+                      frame-stream)))))
+
+(put 'and 'qeval conjoin)
+
+(define (filter? exp) (or (eq? exp 'not) (eq? exp 'lisp-value)))
+
+(define (bring-filter-behind conjuncts)
+  (let iter ((conjuncts conjuncts) (infront '()) (behind '()))
+    (cond ((null? conjuncts) (append infront behind))
+          (let ((first (first-conjunct conjuncts))
+                (rest (rest-conjuncts conjuncts)))
+            (cond ((filter? (type first))
+                   (iter rest infront (append behind first)))
+                  (else
+                   (iter rest (append infront first) behind)))))))

@@ -66,11 +66,11 @@ somethingは残った?yをreverseしたものなので
 (reverse ?y something)
 規則として書いてみると
 
-(rule (reverse (?x) (?x)))
+(assert! (rule (reverse () ())))
 
-(rule (reverse (?x . ?y) ?z)
-      (and (append-to-form ?something ?x ?z)
-           (reverse ?y ?something)))
+(assert! (rule (reverse (?x . ?y) ?z)
+               (and (reverse ?y ?something)
+                    (append-to-form ?something (?x) ?z))))
 
 実際にリストを入れて確かめてみる．
 (reverse (1 2 3 4) ?z)

@@ -1,6 +1,7 @@
 (define-module stream.sicp
   (export stream-null? stream-car stream-cdr delay cons-stream force memo-proc stream-map
-          stream-ref stream-for-each display-stream the-empty-stream stream-filter))
+          stream-ref stream-for-each display-stream
+          the-empty-stream stream-filter stream-append))
 
 (define (stream-null? stream)
   (null? stream))
@@ -20,11 +21,11 @@
   (delayed-object))
 
 (define (memo-proc proc)
-  (let ((already-run? false) (result false))
+  (let ((already-run? #f) (result #f))
     (lambda ()
       (if (not already-run?)
           (begin (set! result (proc))
-                 (set! already-run? true)
+                 (set! already-run? #t)
                  result)
           result))))
 
@@ -62,3 +63,9 @@
                       (stream-filter pred
                                      (stream-cdr stream))))
         (else (stream-filter pred (stream-cdr stream)))))
+
+(define (stream-append s1 s2)
+  (if (stream-null? s1)
+      s2
+      (cons-stream (stream-car s1)
+                   (stream-append (stream-cdr s1) s2))))

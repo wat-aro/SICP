@@ -1,6 +1,8 @@
 (define true #t)
 (define false #f)
 
+(define apply-primitive-procedure apply)
+
 (define (eval exp env)
   (cond ((self-evaluating? exp) exp)
         ((variable? exp) (lookup-variable-value exp env))
@@ -512,3 +514,10 @@
                      '<procedure-env>))
       (display object)))
 
+(define (empty-arglist) '())
+
+(define (adjoin-arg arg arglist)
+  (append arglist (list arg)))
+
+(define (last-operand? ops)
+  (null? (cdr ops)))

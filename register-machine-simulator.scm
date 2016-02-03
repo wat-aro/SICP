@@ -60,8 +60,8 @@
       (define (proceed)
         (let ((insts (get-contents pc)))
           (cond ((null? insts) 'done)
-                ((instruction-execution-proc (car insts)))
                 (else
+                 ((instruction-execution-proc (car insts)))
                  (cond ((label-exp? (caar insts))
                         (set! tracing-label (cdaar insts))
                         (set! label-number 1))
@@ -393,6 +393,7 @@
             ((eq? message 'pop) (pop))
             ((eq? message 'initialize) (initialize))
             ((eq? message 'print-statistics) (print-statistics))
+            ((eq? message 'show) s)
             (else
              (error "Unknown request -- STACK" message))))
     dispatch))

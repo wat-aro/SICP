@@ -14,14 +14,14 @@
          (make-procedure (lambda-parameters exp)
                          (lambda-body exp)
                          env))
-        ((let? exp) (eval (let->lambda exp) env))
+        ((let? exp) (eval (let->combination exp) env))
         ((let*? exp) (eval (let*->nested-lets exp) env))
         ((letrec? exp) (eval (letrec->let exp) env)) ;;letrecを追加
         ((begin? exp)
          (eval-sequence (begin-actions exp) env))
         ((cond? exp) (eval (cond->if exp) env))
-        ((and? exp) (eval-and exp env))
-        ((or? exp) (eval-or exp env))
+        ((and? exp) (eval (and->if exp) env))
+        ((or? exp) (eval (or->if exp) env))
         ((application? exp)
          (my-apply (eval (operator exp) env)
                    (list-of-values (operands exp) env)))
@@ -263,33 +263,37 @@
                            (sequence->exp action))
                        (expand-clauses rest)))))))
 
+
+
+
+
+
 ;; and
 (define (and? exp) (tagged-list? exp 'and))
 (define (and-clauses exp) (cdr exp))
 
-(define (eval-and exp env)
-  (let iter ((clauses (and-clauses exp)))
-    (if (null? clauses)
-        'true
-        (let ((first (eval (car clauses) env)))
-          (cond ((null? (cdr clauses)) first)
-                (first (iter (cdr clauses)))
-                (else 'false))))))
-
+(define (and->if exp) (expand-and-clause (and-clauses exp)))
+(define (expand-and-clause clauses)
+  (if (null? clauses)
+      'true
+      (if (last-exp? clauses)
+          (first-exp clauses) ;;最後の式の値を返す.
+          (make-if (first-exp clauses)
+                   (expand-and-clause (rest-exps clauses))
+                   'false))))
 
 ;; or
 (define (or? exp) (tagged-list? exp 'or))
 (define (or-clauses exp) (cdr exp))
 
-(define (eval-or exp env)
-  (let iter ((clauses (or-clauses exp)))
-    (if (null? clauses)
-        'false
-        (let ((first (eval (car clauses) env)))
-          (cond ((null? (cdr clauses)) first)
-                (first 'true)
-                (else (iter (cdr clauses))))))))
-
+(define (or->if exp) (expand-or-clause (or-clauses exp)))
+(define (expand-or-clause clauses)
+  (if (null? clauses)
+      'false
+      (let ((first (first-exp clauses)))
+        (make-if first
+                 first
+                 (expand-or-clause (rest-exps clauses))))))
 
 ;; let
 (define (let? exp) (tagged-list? exp 'let))
@@ -457,7 +461,9 @@
         (list '- -)
         (list '+ +)
         (list '* *)
-        (list '/ /)))
+        (list '/ /)
+        (list '> >)
+        (list '< <)))
 
 (define (primitive-procedure-names)
   (map car primitive-procedures))
@@ -513,11 +519,3 @@
                      (procedure-body object)
                      '<procedure-env>))
       (display object)))
-
-(define (empty-arglist) '())
-
-(define (adjoin-arg arg arglist)
-  (append arglist (list arg)))
-
-(define (last-operand? ops)
-  (null? (cdr ops)))

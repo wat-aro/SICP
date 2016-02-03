@@ -434,7 +434,7 @@
 (define (or->if exp) (expand-or-clause (or-clauses exp)))
 (define (expand-or-clause clauses)
   (if (null? clauses)
-      'true
+      'false
       (let ((first (first-exp clauses)))
         (make-if first
                  first

@@ -134,17 +134,6 @@
 (define the-global-environment (setup-environment))
 (define (get-global-environment) the-global-environment)
 
-(define (apply-symbol-args? exp)
-  (fold (lambda (x y)
-          (and (or (number? x) (quoted? x)) y))
-        #t (cdr exp)))
-
-(define (apply-operands-symbol-args exp)
-  (map (lambda (x) (if (quoted? x)
-                       (cadr x)
-                       x))
-       (cdr exp)))
-
 (define eceval
   (make-machine
    (list (list 'self-evaluating? self-evaluating?)
@@ -216,8 +205,7 @@
          (list 'definition-error? definition-error?)
          (list 'primitive-error? primitive-error?)
          (list 'cdr cdr)
-         (list 'apply-symbol-args? apply-symbol-args?)
-         (list 'apply-operands-symbol-args apply-operands-symbol-args))
+         )
    '(read-eval-print-loop
      (perform (op initialize-stack))
      (perform
@@ -288,27 +276,27 @@
      (goto (label signal-error))
 
      ev-application
-     (test (op apply-symbol-args?) (reg exp)) ;追加
-     (branch (label appl-symbol-args))
      (save continue)
-     (save env)
      (assign unev (op operands) (reg exp))
-     (save unev)
      (assign exp (op operator) (reg exp))
+     (test (op variable?) (reg exp))
+     (branch (label ev-appl-symbol-operator))
+     (save env)
+     (save unev)
      (assign continue (label ev-appl-did-operator))
      (goto (label eval-dispatch))
 
-     ;; 追加．
-     appl-symbol-args
-     (assign argl (op apply-operands-symbol-args) (reg exp))
-     (assign exp (op operator) (reg exp))
-     (save continue)
-     (assign continue (label ev-appl-did-operator-symbol-args))
+     ev-appl-symbol-operator
+     (assign continue (label ev-appl-did-symbol-operator))
      (goto (label eval-dispatch))
 
-     ev-appl-did-operator-symbol-args
+     ev-appl-did-symbol-operator
+     (assign argl (op empty-arglist))
      (assign proc (reg val))
-     (goto (label apply-dispatch))
+     (test (op no-operands?) (reg unev))
+     (branch (label apply-dispatch))
+     (save proc)
+     (goto (label ev-appl-operand-loop))
 
      ev-appl-did-operator
      (restore unev)                     ;非演算子
@@ -539,4 +527,3 @@
      (perform (op user-print) (reg val))
      (goto (label read-eval-print-loop))
      )))
-

@@ -159,7 +159,6 @@
     (let ((lambda-linkage
            (if (eq? linkage 'next) after-lambda linkage)))
       (append-instruction-sequences
-       ;; tack-onでend-withとcompile-lambda-bodyを同じ手続き本体として連結
        (tack-on-instruction-sequence
         (end-with-linkage
          lambda-linkage
@@ -200,26 +199,25 @@
       (construct-arglist operand-codes)
       (compile-procedure-call target linkage)))))
 
+;;; 最初のreverseをなくす
 (define (construct-arglist operand-codes)
-  (let ((operand-codes (reverse operand-codes)))
-    (if (null? operand-codes)
-        ;; 引数がない場合はarglに'()を代入
-        (make-instruction-sequence
-         '() '(argl)
-         `((assign argl (const ()))))
-        (let ((code-to-get-last-arg
-               (append-instruction-sequences
-                (car operand-codes)
-                (make-instruction-sequence
-                 '(val) '(argl)
-                 `((assign argl (op list) (reg val)))))))
-          (if (null? (cdr operand-codes))
-              code-to-get-last-arg
-              (preserving
-               '(env)
-               code-to-get-last-arg
-               (code-to-get-rest-args
-                (cdr operand-codes))))))))
+  (if (null? operand-codes)
+      (make-instruction-sequence
+       '() '(argl)
+       `((assign argl (const ()))))
+      (let ((code-to-get-last-arg
+             (append-instruction-sequences
+              (car operand-codes)
+              (make-instruction-sequence
+               '(val) '(argl)
+               `((assign argl (op list) (reg val)))))))
+        (if (null? (cdr operand-codes))
+            code-to-get-last-arg
+            (preserving
+             '(env)
+             code-to-get-last-arg
+             (code-to-get-rest-args
+              (cdr operand-codes)))))))
 
 (define (code-to-get-rest-args operand-codes)
   (let ((code-for-next-arg
@@ -228,8 +226,9 @@
           (car operand-codes)
           (make-instruction-sequence
            '(val argl) '(argl)
-           '((assign argl
-                     (op cons) (reg val) (reg argl)))))))
+           '((assign val (op list) (reg val)) ;valをリスト化する
+             (assign argl
+                     (op append) (reg argl) (reg val))))))) ;appendで順番通りにつなげる
     (if (null? (cdr operand-codes))
         code-for-next-arg
         (preserving
@@ -313,17 +312,16 @@
 (define (append-instruction-sequences . seqs)
   (define (append-2-sequences seq1 seq2)
     (make-instruction-sequence
-     ;; needed
      (list-union (registers-needed seq1)
-                 (list-difference (registers-needed seq2) ;seq1で変更してseq2がそれを必要とする
-                                  (registers-modified seq1))) ;ならseq1の時点では必要ない
+                 (list-difference (registers-needed seq2)
+                                  (registers-modified seq1)))
      (list-union (registers-modified seq1)
                  (registers-modified seq2))
      (append (statements seq1) (statements seq2))))
   (define (append-seq-list seqs)
     (if (null? seqs)
         (empty-instruction-sequence)
-        (append-2-sequences (car seqs)  ;nullじゃなければこっち．
+        (append-2-sequences (car seqs)
                             (append-seq-list (cdr seqs)))))
   (append-seq-list seqs))
 
@@ -342,19 +340,16 @@
 (define (preserving regs seq1 seq2)
   (if (null? regs)
       (append-instruction-sequences seq1 seq2)
-      (let ((first-reg (car regs)))     ;first-regが
-        (if (and (needs-register? seq2 first-reg) ;seq2に必要なレジスタで
-                 (modifies-register? seq1 first-reg)) ;seq1が変更するレジスタなら
+      (let ((first-reg (car regs)))
+        (if (and (needs-register? seq2 first-reg)
+                 (modifies-register? seq1 first-reg))
             (preserving
              (cdr regs)
              (make-instruction-sequence
-              ;; needs ここでsaveするのでfirst-regが必要になるのでlist-union
               (list-union (list first-reg)
                           (registers-needed seq1))
-              ;; modify saveしてのseq2の前にrestoreするのでseq2から見ればfirst-reg変更無し
               (list-difference (registers-modified seq1)
                                (list first-reg))
-              ;; statements 条件を満たすfirst-regの場合はseq1をsaveとrestoreで挟む
               (append `((save ,first-reg))
                       (statements seq1)
                       `((restore ,first-reg))))
@@ -375,4 +370,62 @@
                (registers-modified seq2))
    (append (statements seq1) (statements seq2))))
 
-
+((env)
+ (val)
+ ((assign val (op make-compiled-procedure) (label entry23) (reg env))
+  (goto (label after-lambda24))
+  entry23
+  (assign env (op compiled-procedure-env) (reg proc))
+  (assign env (op extend-environment) (const (x)) (reg argl) (reg env))
+  (assign proc (op lookup-variable-value) (const +) (reg env))
+  (save continue)
+  (save proc)
+  (assign val (op lookup-variable-value) (const x) (reg env)) ;元はgからだった
+  (assign argl (op list) (reg val))
+  (save argl)
+  (assign proc (op lookup-variable-value) (const g) (reg env)) ;次の(g ...)にいく．
+  (save proc)
+  (assign proc (op lookup-variable-value) (const +) (reg env))
+  (assign val (op lookup-variable-value) (const x) (reg env)) ;左の引数のxから
+  (assign argl (op list) (reg val))
+  (assign val (const 2))                ;次に2
+  (assign val (op list) (reg val))
+  (assign argl (op append) (reg argl) (reg val))
+  (test (op primitive-procedure?) (reg proc))
+  (branch (label primitive-branch25))
+  compiled-branch26
+  (assign continue (label after-call27))
+  (assign val (op compiled-procedure-entry) (reg proc))
+  (goto (reg val))
+  primitive-branch25
+  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+  after-call27
+  (assign argl (op list) (reg val))
+  (restore proc)
+  (test (op primitive-procedure?) (reg proc))
+  (branch (label primitive-branch28))
+  compiled-branch29
+  (assign continue (label after-call30))
+  (assign val (op compiled-procedure-entry) (reg proc))
+  (goto (reg val))
+  primitive-branch28
+  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+  after-call30
+  (restore argl)
+  (assign val (op list) (reg val))
+  (assign argl (op append) (reg argl) (reg val))
+  (restore proc)
+  (restore continue)
+  (test (op primitive-procedure?) (reg proc))
+  (branch (label primitive-branch31))
+  compiled-branch32
+  (assign val (op compiled-procedure-entry) (reg proc))
+  (goto (reg val))
+  primitive-branch31
+  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+  (goto (reg continue))
+  after-call33
+  after-lambda24
+  (perform (op define-variable!) (const f) (reg val) (reg env))
+  (assign val (const ok))
+  ))

@@ -1,0 +1,24 @@
+--- 5.33a.scm	2016-02-06 19:25:30.000000000 +0900
++++ 5.33b.scm	2016-02-06 19:26:35.000000000 +0900
+@@ -32,9 +32,7 @@
+   (assign proc (op lookup-ariable-value) (const *) (reg env))
+   (save continue)
+   (save proc)
+-  (assign val (op lookup-ariable-value) (const n) (reg env))
+-  (assign argl (op list) (reg val))
+-  (save argl)
++  (save env)
+   (assign proc (op lookup-ariable-value) (const factorial) (reg env))
+   (save proc)
+   (assign proc (op lookup-ariable-value) (const -) (reg env))
+@@ -62,7 +60,9 @@
+   primitive-branch12
+   (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+   after-call14
+-  (restore argl)
++  (assign argl (op list) (reg val))
++  (restore env)
++  (assign val (op lookup-ariable-value) (const n) (reg env))
+   (assign argl (op cons) (reg val) (reg argl))
+   (restore proc)
+   (restore continue)

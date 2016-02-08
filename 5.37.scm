@@ -339,6 +339,24 @@
         (else (cons (car s1)
                     (list-difference (cdr s1) s2)))))
 
+;;; 無駄にsave, restoreを生成する
+(define (preserving regs seq1 seq2)
+  (if (null? regs)
+      (append-instruction-sequences seq1 seq2)
+      (let ((first-reg (car regs)))
+        (preserving
+         (cdr regs)
+         (make-instruction-sequence
+          (list-union (list first-reg)
+                      (registers-needed seq1))
+          (list-difference (registers-modified seq1)
+                           (list first-reg))
+          (append `((save ,first-reg))
+                  (statements seq1)
+                  `((restore ,first-reg))))
+         seq2))))
+
+;;; 本来のpreserving
 (define (preserving regs seq1 seq2)
   (if (null? regs)
       (append-instruction-sequences seq1 seq2)
@@ -376,3 +394,83 @@
    (append (statements seq1) (statements seq2))))
 
 
+;;; save, restoreは使用されない
+((env)
+ (val)
+ ((assign val (op make-compiled-procedure) (label entry34) (reg env))
+  (goto (label after-lambda35))
+  entry34
+  (assign env (op compiled-procedure-env) (reg proc))
+  (assign env (op extend-environment) (const (a b)) (reg argl) (reg env))
+  (assign proc (op lookup-variable-value) (const +) (reg env))
+  (assign val (op lookup-variable-value) (const a) (reg env))
+  (assign argl (op list) (reg val))
+  (assign val (op lookup-variable-value) (const b) (reg env))
+  (assign val (op list) (reg val))
+  (assign argl (op append) (reg argl) (reg val))
+  (test (op primitive-procedure?) (reg proc))
+  (branch (label primitive-branch36))
+  compiled-branch37
+  (assign val (op compiled-procedure-entry) (reg proc))
+  (goto (reg val))
+  primitive-branch36
+  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+  (goto (reg continue))
+  after-call38
+  after-lambda35
+  (perform (op define-variable!) (const f) (reg val) (reg env))
+  (assign val (const ok))
+  ))
+
+((continue env)                         ;まずcontinueを必要とするようになっている．
+ (val)
+ ((save continue)                       ;ここでsave continueするから
+  (save env)
+  (save continue)                       ;ここでさらにsave continueしている．
+  (assign val (op make-compiled-procedure) (label entry41) (reg env))
+  (restore continue)                    ;ここで復帰．
+  (goto (label after-lambda42))         ;ここまでで無駄なsave 3. 無駄なrestore 1
+  entry41
+  (assign env (op compiled-procedure-env) (reg proc))
+  (assign env (op extend-environment) (const (a b)) (reg argl) (reg env))
+  (save continue)                       ;ここでまたsave continue
+  (save env)                            ;env
+  (save continue)                       ;continue
+  (assign proc (op lookup-variable-value) (const +) (reg env))
+  (restore continue)                    ;restore c
+  (restore env)                         ;restore e
+  (restore continue)                    ;restore c
+  (save continue)                       ;save c
+  (save proc)                           ;save p
+  (save env)                            ;save e
+  (save continue)                       ;save c
+  (assign val (op lookup-variable-value) (const a) (reg env))
+  (restore continue)                    ;restore c
+  (assign argl (op list) (reg val))
+  (restore env)                         ;restore e
+  (save argl)                           ;save a
+  (save continue)                       ;save c
+  (assign val (op lookup-variable-value) (const b) (reg env))
+  (restore continue)                    ;restore c
+  (restore argl)                        ;restore a
+  (assign val (op list) (reg val))
+  (assign argl (op append) (reg argl) (reg val))
+  (restore proc)                        ;restore p
+  (restore continue)                    ;restore c
+  (test (op primitive-procedure?) (reg proc))
+  (branch (label primitive-branch43))
+  compiled-branch44
+  (assign val (op compiled-procedure-entry) (reg proc))
+  (goto (reg val))
+  primitive-branch43
+  (save continue)                       ;save c
+  (assign val (op apply-primitive-procedure) (reg proc) (reg argl))
+  (restore continue)                    ;restore c
+  (goto (reg continue))
+  after-call45
+  after-lambda42
+  (restore env)                         ;restore e 最初のenv
+  (perform (op define-variable!) (const f) (reg val) (reg env))
+  (assign val (const ok))
+  (restore continue)                    ;最初のcontinue
+  ))

@@ -30,7 +30,7 @@
            (list (list 'pc pc) (list 'flag flag))))
       (define (allocate-register name)
         (if (assoc name register-table)
-            (error "Multiply defined rgister: " name)
+            (error "Multiply defined register: " name)
             (set! register-table
                   (cons (list name (make-register name))
                         register-table)))
@@ -47,13 +47,14 @@
                 ((check-breakpoint breakpoint) (format "break! ~s: ~s"
                                                        tracing-label label-number))
                 (else
+                 (trace (caar insts))
                  ((instruction-execution-proc (car insts)))
                  (cond ((label-exp? (caar insts))
                         (set! tracing-label (cadaar insts))
                         (set! label-number 1))
                        (else (set! the-instruction-counter (+ 1 the-instruction-counter))
                              (set! label-number (+ 1 label-number))
-                             (trace (caar insts))))
+                             ))
                  (execute trace)))))
       ;; executeからcheck-breakpointを省いたもの．
       ;; executeから復帰するとcheck-breakpointに引っかかってまたbreakする．

@@ -1,4 +1,13 @@
-(load "./eval.scm")
+;; (define (let->combination exp)
+;;   (if (symbol? (cadr exp)) ;; 2番目の要素がシンボルならnamed-let
+;;       (named-let->define (named-let-func-name exp)
+;;                          (named-let-variables exp)
+;;                          (named-let-expressions exp)
+;;                          (named-let-bodys exp))
+;;       (cons (make-lambda (let-variables exp)
+;;                      (let-bodys exp))
+;;         (let-expressions exp))))
+
 
 ;;; make-branchのための手続き
 (define label-counter 0)
@@ -197,22 +206,22 @@
        after-lambda))))
 
 ;;; コンパイルした手続きが実際に処理をするラベルの中身を作る
-(define (compile-lambda-body exp proc-entry ct-env)
-  (let ((formals (lambda-parameters exp))) ;lambdaの引数はformalsに束縛
-    (append-instruction-sequences
-     (make-instruction-sequence
-      '(env proc argl) '(env)
-      ;; 実際の処理をするラベル
-      `(,proc-entry
-        (assign env (op compiled-procedure-env) (reg proc))
-        (assign env                     ;ここで仮引数と実引数で環境を拡張
-                (op extend-environment)
-                (const ,formals)
-                (reg argl)
-                (reg env))))
-     ;; lambdaのbodyは式が複数のことがあるのでcompile-sequence
-     ;; 呼び出し元に値を返さないと行けないのでlinkageはreturn
-     (compile-sequence (scan-out-defines (lambda-body exp)) 'val 'return (cons formals ct-env)))))
+;; (define (compile-lambda-body exp proc-entry ct-env)
+;;   (let ((formals (lambda-parameters exp))) ;lambdaの引数はformalsに束縛
+;;     (append-instruction-sequences
+;;      (make-instruction-sequence
+;;       '(env proc argl) '(env)
+;;       ;; 実際の処理をするラベル
+;;       `(,proc-entry
+;;         (assign env (op compiled-procedure-env) (reg proc))
+;;         (assign env                     ;ここで仮引数と実引数で環境を拡張
+;;                 (op extend-environment)
+;;                 (const ,formals)
+;;                 (reg argl)
+;;                 (reg env))))
+;;      ;; lambdaのbodyは式が複数のことがあるのでcompile-sequence
+;;      ;; 呼び出し元に値を返さないと行けないのでlinkageはreturn
+;;      (compile-sequence (scan-out-defines (lambda-body exp)) 'val 'return (cons formals ct-env)))))
 
 ;;; apply
 (define (compile-application exp target linkage ct-env)
@@ -227,7 +236,7 @@
      '(env continue)
      proc-code                          ;最初にoperatorを確定させる
      (preserving
-      '(proc continue)
+      '(proc continue env)
       (construct-arglist operand-codes) ;operandを評価してarglに代入するための命令の生成
       (compile-procedure-call target linkage))))) ;
 
@@ -276,34 +285,34 @@
 
 ;;; operator, operandsを評価する命令を作った後に呼ばれる
 ;;; この時点でprocにはoperatorのシンボル, arglにはoperandsが入っている
-(define (compile-procedure-call target linkage)
-  (let ((primitive-branch (make-label 'primitive-branch))
-        (compiled-branch (make-label 'compiled-branch))
-        (after-call (make-label 'after-call)))
-    (let ((compiled-linkage
-           (if (eq? linkage 'next) after-call linkage)))
-      (append-instruction-sequences
-       (make-instruction-sequence
-        '(proc) '()
-        `((test (op primitive-procedure?) (reg proc))
-          (branch (label ,primitive-branch))))
-       ;; compiled-branchかprimitive-branchのどちらかだけが実行されるのでparallel
-       (parallel-instruction-sequences
-        (append-instruction-sequences
-         compiled-branch
-         ;; ここでtargetとlinkageに合わせた命令を生成
-         (compile-proc-appl target compiled-linkage))
-        (append-instruction-sequences
-         primitive-branch
-         (end-with-linkage
-          linkage
-          (make-instruction-sequence
-           '(proc argl) (list target)
-           `((assign ,target
-                     (op apply-primitive-procedure)
-                     (reg proc)
-                     (reg argl)))))))
-       after-call))))
+;; (define (compile-procedure-call target linkage)
+;;   (let ((primitive-branch (make-label 'primitive-branch))
+;;         (compiled-branch (make-label 'compiled-branch))
+;;         (after-call (make-label 'after-call)))
+;;     (let ((compiled-linkage
+;;            (if (eq? linkage 'next) after-call linkage)))
+;;       (append-instruction-sequences
+;;        (make-instruction-sequence
+;;         '(proc) '()
+;;         `((test (op primitive-procedure?) (reg proc))
+;;           (branch (label ,primitive-branch))))
+;;        ;; compiled-branchかprimitive-branchのどちらかだけが実行されるのでparallel
+;;        (parallel-instruction-sequences
+;;         (append-instruction-sequences
+;;          compiled-branch
+;;          ;; ここでtargetとlinkageに合わせた命令を生成
+;;          (compile-proc-appl target compiled-linkage))
+;;         (append-instruction-sequences
+;;          primitive-branch
+;;          (end-with-linkage
+;;           linkage
+;;           (make-instruction-sequence
+;;            '(proc argl) (list target)
+;;            `((assign ,target
+;;                      (op apply-primitive-procedure)
+;;                      (reg proc)
+;;                      (reg argl)))))))
+;;        after-call))))
 
 ;;; 手続きの採用
 (define (compile-proc-appl target linkage)
@@ -430,8 +439,8 @@
 
 
 ;; ;;; 5.38
-(define (open-code? exp)
-  (memq (car exp) '(= * - +)))
+;; (define (open-code? exp)
+;;   (memq (car exp) '(= * - +)))
 
 ;; (define (compile exp target linkage)
 ;;   (cond ((self-evaluating? exp)
@@ -486,7 +495,7 @@
         ((or (tagged-list? exp '+)
              (tagged-list? exp '*))
          (compile-open-code-operand-2
-          (operator exp env) (operands exp) target linkage ct-env))
+          (operator exp) (operands exp) target linkage ct-env)) ;(operator exp env) envを削除
         (error "invalid application: " exp)))
 
 (define (compile-open-code-operand exp target linkage ct-env)
@@ -562,8 +571,8 @@
 ;;; 5.39
 ;;; 文面アドレスを使って変数の値を探す
 (define (lexical-address-lookup lex-add r-env)
-  (let ((frame (frame-values (list-ref r-env (car lex-add)))))
-    (let ((val (list-ref frame (cadr lex-add))))
+  (let ((frame (list-ref r-env (car lex-add))))
+    (let ((val (list-ref (frame-values frame) (cadr lex-add))))
       (if (eq? val '*unassigned*)
           (error "*Unassigned* variable")
           val))))
@@ -571,9 +580,13 @@
 ;;; 文面アドレスにある値を変更する
 (define (lexical-address-set! lex-add val r-env)
   (let ((frame (frame-values (list-ref r-env (car lex-add)))))
-    (let ((target (list-ref frame (cadr lex-add))))
-      (set! target val)
-      'ok)))
+    (define (iter frame count)
+      (if (= count 0)
+          (begin (set-car! frame val)
+                 'ok)
+          (iter (cdr frame) (- count 1))))
+    (iter frame (cadr lex-add))))
+
 
 ;;; 5.41
 (define (find-variable var ct-env)
@@ -596,17 +609,13 @@
   (let ((address (find-variable exp ct-env)))
     (end-with-linkage
      linkage
-     (if (eq? address 'not-found)
-         (make-instruction-sequence
-          '() (list target)
-          ;; targetなら変更しても問題ないので一時的に帯域環境を入れる
-          `((assign ,target (op get-global-environment))
-            (assign ,target
+     (make-instruction-sequence
+      '(env) (list target)
+      (if (eq? address 'not-found)
+          `((assign ,target
                     (op lookup-variable-value)
                     (const ,exp)
-                    (reg ,target))))
-         (make-instruction-sequence
-          '() (list target)
+                    (reg env)))
           `((assign ,target
                     (op lexical-address-lookup)
                     (const ,address)
@@ -616,54 +625,52 @@
   (let ((var (assignment-variable exp))
         (get-value-code                 ;valを求めるための命令．
          (compile (assignment-value exp) 'val 'next ct-env)))
-    (let ((address (find-variable var ct-env)))
-     (end-with-linkage
-      linkage
-      (append-instruction-sequences
-                  get-value-code ;代入する値を求め，valに代入される．seq1
-                  ;; valに代入された値をvarに代入する．seq2
-                  (if (eq? address 'not-found)
-                      (make-instruction-sequence
-                       '(val)
-                       `(env ,target)
-                       ;; 一度targetにglobal-environmentを代入してからsetする
-                       `((assign env (op get-global-environment))
-                         (perform (op set-variable-value!)
-                                  (const ,var)
-                                  (reg val)
-                                  (reg env))
-                         (assign ,target (const ok))))
-                      (make-instruction-sequence
-                       '(val)
-                       (list target)
-                       `((perform (op lexical-address-set!)
-                                  (const ,address)
-                                  (reg val)
-                                  (reg env))
-                         (assign ,target (const ok))))))))))
+    (end-with-linkage
+     linkage
+     (append-instruction-sequences
+      get-value-code ;代入する値を求め，valに代入される．seq1
+      ;; valに代入された値をvarに代入する．seq2
+      (let ((address (find-variable var ct-env)))
+        (if (eq? address 'not-found)
+            (make-instruction-sequence
+             '(val env)
+             (list target)
+             `((perform (op set-variable-value!)
+                        (const ,var)
+                        (reg val)
+                        (reg env))
+               (assign ,target (const ok))))
+            (make-instruction-sequence
+             '(val env)
+             (list target)
+             `((perform (op lexical-address-set!)
+                        (const ,address)
+                        (reg val)
+                        (reg env))
+               (assign ,target (const ok))))))))))
 
-(define (compile exp target linkage ct-env)
-  (cond ((self-evaluating? exp)
-         (compile-self-evaluating exp target linkage))
-        ((quoted? exp) (compile-quoted exp target linkage))
-        ((variable? exp)
-         (compile-variable exp target linkage ct-env))
-        ((assignment? exp)
-         (compile-assignment exp target linkage ct-env))
-        ((definition? exp)
-         (compile-definition exp target linkage ct-env))
-        ((if? exp) (compile-if exp target linkage ct-env))
-        ((lambda? exp) (compile-lambda exp target linkage ct-env))
-        ((begin? exp)
-         (compile-sequence (begin-actions exp)
-                           target linkage ct-env))
-        ((cond? exp) (compile (cond->if exp) target linkage ct-env))
-        ((open-code? exp)               ;open-code?でdispatch
-         (compile-open-code exp target linkage ct-env))
-        ((application? exp)
-         (compile-application exp target linkage ct-env))
-        (else
-         (error "Unknown expression type -- COMPILE" exp))))
+;; (define (compile exp target linkage ct-env)
+;;   (cond ((self-evaluating? exp)
+;;          (compile-self-evaluating exp target linkage))
+;;         ((quoted? exp) (compile-quoted exp target linkage))
+;;         ((variable? exp)
+;;          (compile-variable exp target linkage ct-env))
+;;         ((assignment? exp)
+;;          (compile-assignment exp target linkage ct-env))
+;;         ((definition? exp)
+;;          (compile-definition exp target linkage ct-env))
+;;         ((if? exp) (compile-if exp target linkage ct-env))
+;;         ((lambda? exp) (compile-lambda exp target linkage ct-env))
+;;         ((begin? exp)
+;;          (compile-sequence (begin-actions exp)
+;;                            target linkage ct-env))
+;;         ((cond? exp) (compile (cond->if exp) target linkage ct-env))
+;;         ((open-code? exp)               ;open-code?でdispatch
+;;          (compile-open-code exp target linkage ct-env))
+;;         ((application? exp)
+;;          (compile-application exp target linkage ct-env))
+;;         (else
+;;          (error "Unknown expression type -- COMPILE" exp))))
 
 ;;; 5.43
 (define (compile-lambda-body exp proc-entry ct-env)
@@ -706,31 +713,31 @@
                                       defines)
                                  non-defines)))))))
 
-(define (compile exp target linkage ct-env)
-  (cond ((self-evaluating? exp)
-         (compile-self-evaluating exp target linkage))
-        ((quoted? exp) (compile-quoted exp target linkage))
-        ((variable? exp)
-         (compile-variable exp target linkage ct-env))
-        ((assignment? exp)
-         (compile-assignment exp target linkage ct-env))
-        ((definition? exp)
-         (compile-definition exp target linkage ct-env))
-        ((if? exp) (compile-if exp target linkage ct-env))
-        ((lambda? exp)
-         (compile-lambda exp target linkage ct-env))
-        ((let? exp)
-         (compile (let->combination exp) target linkage ct-env))
-        ((begin? exp)
-         (compile-sequence (begin-actions exp)
-                           target linkage ct-env))
-        ((cond? exp) (compile (cond->if exp) target linkage ct-env))
-        ((open-code? exp)               ;open-code?でdispatch
-         (compile-open-code exp target linkage ct-env))
-        ((application? exp)
-         (compile-application exp target linkage ct-env))
-        (else
-         (error "Unknown expression type -- COMPILE" exp))))
+;; (define (compile exp target linkage ct-env)
+;;   (cond ((self-evaluating? exp)
+;;          (compile-self-evaluating exp target linkage))
+;;         ((quoted? exp) (compile-quoted exp target linkage))
+;;         ((variable? exp)
+;;          (compile-variable exp target linkage ct-env))
+;;         ((assignment? exp)
+;;          (compile-assignment exp target linkage ct-env))
+;;         ((definition? exp)
+;;          (compile-definition exp target linkage ct-env))
+;;         ((if? exp) (compile-if exp target linkage ct-env))
+;;         ((lambda? exp)
+;;          (compile-lambda exp target linkage ct-env))
+;;         ((let? exp)
+;;          (compile (let->combination exp) target linkage ct-env))
+;;         ((begin? exp)
+;;          (compile-sequence (begin-actions exp)
+;;                            target linkage ct-env))
+;;         ((cond? exp) (compile (cond->if exp) target linkage ct-env))
+;;         ((open-code? exp)               ;open-code?でdispatch
+;;          (compile-open-code exp target linkage ct-env))
+;;         ((application? exp)
+;;          (compile-application exp target linkage ct-env))
+;;         (else
+;;          (error "Unknown expression type -- COMPILE" exp))))
 
 ;;; 5.44
 (define (compile exp target linkage ct-env)
@@ -744,14 +751,20 @@
         ((definition? exp)
          (compile-definition exp target linkage ct-env))
         ((if? exp) (compile-if exp target linkage ct-env))
+        ((cond? exp) (compile (cond->if exp) target linkage ct-env))
+        ((and? exp) (compile (and->if exp) target linkage ct-env))
+        ((or? exp) (compile (or->if exp) target linkage ct-env))
         ((lambda? exp)
          (compile-lambda exp target linkage ct-env))
         ((let? exp)
          (compile (let->combination exp) target linkage ct-env))
+        ((let*? exp)
+         (compile (let*->nested-lets exp) target linkage ct-env))
+        ((letrec? exp)
+         (compile (letrec->let exp) target linkage ct-env))
         ((begin? exp)
          (compile-sequence (begin-actions exp)
                            target linkage ct-env))
-        ((cond? exp) (compile (cond->if exp) target linkage ct-env))
         ((open-code? exp ct-env)           ;ct-envも渡して翻訳時環境に上書きされていないか調べる
          (compile-open-code exp target linkage ct-env))
         ((application? exp)
@@ -768,13 +781,110 @@
        (not-overwrite? (car exp) ct-env)))
 
 
+;; (define (compile-and-go expression)
+;;   (let ((instructions
+;;          (assemble (statements
+;;                     (compile expression 'val 'return '()))
+;;                    eceval)))
+;;     (set! the-global-environment (setup-environment))
+;;     (set-register-contents! eceval 'val instructions)
+;;     (set-register-contents! eceval 'flag true)
+;;     (start eceval)))
+
+
+;;; 5.47
+(define (compile-procedure-call target linkage)
+  (let ((primitive-branch (make-label 'primitive-branch))
+        (compiled-branch (make-label 'compiled-branch))
+        (compound-branch (make-label 'compound-branch))
+        (after-call (make-label 'after-call)))
+    (let ((compiled-linkage
+           (if (eq? linkage 'next) after-call linkage)))
+      (append-instruction-sequences
+       (make-instruction-sequence
+        '(proc) '()
+        `((test (op primitive-procedure?) (reg proc))
+          (branch (label ,primitive-branch))))
+       ;; compiled-branchへの分岐を追加
+       (make-instruction-sequence
+        '(proc) '()
+        `((test (op compiled-procedure?) (reg proc))
+          (branch (label ,compiled-branch))))
+       ;; primitiveでもcompiledでもなかったらcompoundとして処理．
+       (parallel-instruction-sequences
+        (append-instruction-sequences
+         compound-branch
+         ;; compiledと同じようにcompound-proc-applで命令を作る
+         (compound-proc-appl target compiled-linkage))
+        (parallel-instruction-sequences
+            (append-instruction-sequences
+             compiled-branch
+             (compile-proc-appl target compiled-linkage))
+            (append-instruction-sequences
+             primitive-branch
+             (end-with-linkage
+              linkage
+              (make-instruction-sequence
+               '(proc argl) (list target)
+               `((assign ,target
+                         (op apply-primitive-procedure)
+                         (reg proc)
+                         (reg argl))))))))
+       after-call))))
+
+(define (compound-proc-appl target linkage)
+  (cond ((and (eq? target 'val) (not (eq? linkage 'return)))
+         (make-instruction-sequence
+          '() all-regs
+          `((assign continue (label ,linkage))
+            (save continue)
+            (goto (reg compapp)))))
+        ((and (not (eq? target 'val))
+              (not (eq? linkage 'return)))
+         (let ((proc-return (make-label 'proc-return)))
+           (make-instruction-sequence
+            '(proc) all-regs
+            `((assign continue (label ,proc-return))
+              (save continue)
+              (goto (reg compapp))
+              ,proc-return
+              (assign ,target (reg val))
+              (goto (label ,linkage))))))
+        ((and (eq? target 'val) (eq? linkage 'return))
+         (make-instruction-sequence
+          '(proc continue) all-regs
+          `((save continue)
+            (goto (reg compapp)))))
+        ((and (not (eq? target 'val)) (eq? linkage 'return))
+         (error "return linkage, target not val -- COMPILE" target))))
+
+;;; 5.48
+(define (setup-environment-with-compile)
+  (extend-environment
+   (list 'compile-and-run)
+   (list (list 'primitive compile-and-run))
+   (setup-environment)))
+
 (define (compile-and-go expression)
   (let ((instructions
          (assemble (statements
                     (compile expression 'val 'return '()))
                    eceval)))
-    (set! the-global-environment (setup-environment))
+    (set! the-global-environment (setup-environment-with-compile))
     (set-register-contents! eceval 'val instructions)
     (set-register-contents! eceval 'flag true)
     (start eceval)))
 
+(define (compile-and-run expression)
+  (let ((instructions
+         (assemble (statements
+                    (compile expression 'val 'return '()))
+                   eceval)))
+    (set-register-contents! eceval 'val instructions)
+    (set-register-contents! eceval 'flag true)
+    (start eceval)))
+
+(define (start-eceval)
+  (set! the-global-environment (setup-environment-with-compile))
+  (set-register-contents! eceval 'flag false)
+  (start eceval))

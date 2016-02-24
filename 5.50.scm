@@ -1,7 +1,13 @@
-(define true #t)
-(define false #f)
+;; (define true #t)
+;; (define false #f)
+(define (map proc list)
+  (if (null? list)
+    '()
+    (cons (proc (car list))
+          (map proc (cdr list)))))
 
 (define apply-primitive-procedure apply)
+
 
 (define (eval exp env)
   (cond ((self-evaluating? exp) exp)
@@ -343,9 +349,8 @@
 
 
 (define (named-let->define func-name variables expressions bodys)
-  (make-begin (scan-out-defines
-               (list (make-definition func-name (make-lambda variables bodys))
-                     (cons func-name expressions)))))
+  (make-begin (list (make-definition func-name (make-lambda variables bodys))
+                    (cons func-name expressions))))
 
 ;; 4.20
 ;; 選択子
@@ -465,9 +470,14 @@
 (define (primitive-procedure-names)
   (map car primitive-procedures))
 
+;; (define (primitive-procedure-objects)
+;;   (map (lambda (proc) (list 'primitive (cadr proc)))
+;;        primitive-procedures))
 (define (primitive-procedure-objects)
-  (map (lambda (proc) (list 'primitive (cadr proc)))
+  (map (lambda (proc) (list 'primitive (cadadr proc)))
        primitive-procedures))
+
+
 
 (define (apply-primitive-procedure proc args)
   (apply-in-underlying-scheme
@@ -481,19 +491,19 @@
          (extend-environment (primitive-procedure-names)
                              (primitive-procedure-objects)
                              the-empty-environment)))
-    (define-variable! 'true #t initial-env)
-    (define-variable! 'false #f initial-env)
+    (define-variable! 'true true initial-env)
+    (define-variable! 'false false initial-env)
     initial-env))
 
 (define the-global-environment (setup-environment))
 
-(define input-prompt ";;; M-Eval input:")
-(define output-prompt ";;; M-Eval value:")
+(define input-prompt ";;; MC-Eval input:")
+(define output-prompt ";;; MC-Eval value:")
 
 (define (driver-loop)
   (prompt-for-input input-prompt)
   (let ((input (read)))
-    (let ((output (time (eval input the-global-environment))))
+    (let ((output (eval input the-global-environment)))
       (announce-output output-prompt)
       (user-print output)))
   (driver-loop))

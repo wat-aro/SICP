@@ -6,7 +6,7 @@
     (cons (proc (car list))
           (map proc (cdr list)))))
 
-(define apply-primitive-procedure apply)
+;; (define apply-primitive-procedure apply)
 
 
 (define (eval exp env)

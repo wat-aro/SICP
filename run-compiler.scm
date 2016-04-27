@@ -1,0 +1,103 @@
+(load "./eval.scm")
+(load "./register-machine-simulator.scm")
+(load "./compiler.scm")
+(load "./eceval.scm")
+
+(define (rcepl) RCEPL)
+
+(define rcepl-proc
+  (append eceval-procedure
+          (list (list 'compile compile)
+                (list 'assemble assemble)
+                (list 'rcepl rcepl)
+                (list 'statements statements))))
+
+(define RCEPL
+  (make-machine
+   rcepl-proc
+   '((assign machine (op rcepl)) ;直接RCEPLを指せないので
+     read-compile-execute-print-loop
+     (perform (op initialize-stack))
+     (perform (op prompt-for-input) (const ";;;EC-COMP input:"))
+     (assign exp (op read))
+     (assign env (op get-global-environment))
+     (assign continue (label print-result))
+     (goto (label read-compile-execute))
+
+     print-result
+     (perform (op print-stack-statistics))
+     (perform (op announce-output) (const ";;;EC-COMP value":))
+     (perform (op user-print) (reg val))
+     (goto (label read-compile-execute-print-loop))
+
+     read-compile-execute
+     (assign val (op compile) (reg exp) (const val) (const return) (const ()))
+     (assign exp (op statements) (reg val))
+     (assign val (op assemble) (reg exp) (reg machine))
+     (goto (reg val)))))
+
+(define primitive-procedures
+  (list (list 'car car)
+        (list 'cdr cdr)
+        (list 'cons cons)
+        (list 'null? null?)
+        (list 'square (lambda (x) (* x x)))
+        (list '= =)
+        (list '< <)
+        (list '<= <=)
+        (list '> >)
+        (list '>= >=)
+        (list '+ +)
+        (list '- -)
+        (list '* *)
+        (list '/ /)
+        (list 'apply apply)
+        ;; (list 'map map)
+        (list 'let let)
+        (list 'pair? pair?)
+        (list 'eq? eq?)
+        (list 'length length)
+        (list 'set-car! set-car!)
+        (list 'set-cdr! set-cdr!)
+        (list 'display display)
+        (list 'newline newline)
+        (list 'read read)
+        (list 'number? number?)
+        (list 'string? string?)
+        (list 'symbol? symbol?)
+        (list 'caddr caddr)
+        (list 'cdadr cdadr)
+        (list 'cddr cddr)
+        (list 'cadr cadr)
+        (list 'cdddr cdddr)
+        (list 'cadddr cadddr)
+        (list 'caadr caadr)
+        (list 'cadadr cadadr)
+        (list 'not not)
+        (list 'append append)
+        (list 'list list)
+        (list 'reverse reverse)))
+
+;; (define primitive-procedures
+;;   (list (list 'car car)
+;;         (list 'cdr cdr)
+;;         (list 'cons cons)
+;;         (list 'null? null?)
+;;         (list '= =)
+;;         (list '- -)
+;;         (list '+ +)
+;;         (list '* *)
+;;         (list '/ /)
+;;         (list '> >)
+;;         (list '< <)
+;;         (list 'apply apply)
+;;         (list 'list list)
+;;         (list 'newline newline)
+;;         (list 'display display)
+;;         (list 'read read)
+;;         (list 'time time)
+;;         ))
+
+(define (start-rcepl)
+  (set! the-global-environment (setup-environment))
+  (start RCEPL))

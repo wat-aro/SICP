@@ -1,0 +1,56 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN">
+<!-- Created by htmlize-1.47 in css mode. -->
+<html>
+  <head>
+    <title>compiler.scm</title>
+    <style type="text/css">
+    <!--
+      body {
+        color: #000000;
+        background-color: #ffffff;
+      }
+      .comment {
+        /* font-lock-comment-face */
+        color: #b22222;
+      }
+      .comment-delimiter {
+        /* font-lock-comment-delimiter-face */
+        color: #b22222;
+      }
+      .function-name {
+        /* font-lock-function-name-face */
+        color: #0000ff;
+      }
+      .keyword {
+        /* font-lock-keyword-face */
+        color: #a020f0;
+      }
+      .region {
+        /* region */
+        background-color: ns_selection_bg_color;
+      }
+
+      a {
+        color: inherit;
+        background-color: inherit;
+        font: inherit;
+        text-decoration: inherit;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    -->
+    </style>
+  </head>
+  <body>
+    <pre>
+<span class="region"> (</span><span class="keyword"><span class="region">define</span></span><span class="region"> (</span><span class="function-name"><span class="region">lexical-address-lookup</span></span><span class="region"> lex-add r-env)
+   (</span><span class="keyword"><span class="region">let</span></span><span class="region"> ((frame (list-ref r-env (car lex-add))))
+     (</span><span class="keyword"><span class="region">let</span></span><span class="region"> ((val (list-ref (frame-values frame) (cadr lex-add))))
+       val
+       </span><span class="comment-delimiter"><span class="region">;; </span></span><span class="comment"><span class="region">(if (eq? val '*unassigned*)
+</span></span><span class="region">       </span><span class="comment-delimiter"><span class="region">;;     </span></span><span class="comment"><span class="region">(error "*Unassigned* variable")
+</span></span><span class="region">       </span><span class="comment-delimiter"><span class="region">;;     </span></span><span class="comment"><span class="region">val)
+</span></span><span class="region">       )))</span></pre>
+  </body>
+</html>

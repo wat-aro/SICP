@@ -573,9 +573,11 @@
 (define (lexical-address-lookup lex-add r-env)
   (let ((frame (list-ref r-env (car lex-add))))
     (let ((val (list-ref (frame-values frame) (cadr lex-add))))
-      (if (eq? val '*unassigned*)
-          (error "*Unassigned* variable")
-          val))))
+      val
+      ;; (if (eq? val '*unassigned*)
+      ;;     (error "*Unassigned* variable")
+      ;;     val)
+      )))
 
 ;;; 文面アドレスにある値を変更する
 (define (lexical-address-set! lex-add val r-env)
